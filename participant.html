@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Menti ITA – Umfrage</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-database-compat.js"></script>
+  <script src="config.js"></script>
+  <style>
+    body{font-family:system-ui,Roboto,sans-serif;margin:16px;max-width:600px}
+    h1{font-size:1.4rem;text-align:center}
+    fieldset{border:1px solid #ddd;border-radius:8px;padding:12px;margin-bottom:16px}
+    legend{font-weight:600;padding:0 6px}
+    button{display:block;width:100%;padding:12px;border:0;border-radius:8px;font-size:1rem;font-weight:600}
+  </style>
+</head>
+<body>
+  <h1>Menti ITA 📱</h1>
+  <form id="survey">
+    <!-- Multiple-Choice Hilfs-Funktion -->
+  </form>
+
+<script>
+/* ---------- Fragen-Definition ---------- */
+const QUESTIONS=[
+ {id:"q1",type:"mc",text:"Wie oft hast du LLMs vor diesem Workshop genutzt?",
+  opts:["Nie","Gelegentlich (1–5×)","Regelmäßig (6–20×)","Sehr häufig (>20×)"]},
+ {id:"q2",type:"mc",text:"Wie häufig künftig in deiner Arbeit?",
+  opts:["Selten","Hin und wieder","Oft","Täglich"]},
+ {id:"q3",type:"ft",text:"Für welche Tätigkeiten möchtest du LLMs einsetzen?"},
+ {id:"q4",type:"mc",text:"Wie hilfreich war der Workshop?",
+  opts:["Gar nicht","Etwas","Hilfreich","Sehr hilfreich"]},
+ {id:"q5",type:"ft",text:"Welche Themen wünschst du dir im nächsten Workshop?"},
+ {id:"q6",type:"ft",text:"Drei Wörter, die deinen Eindruck des Workshops beschreiben:"},
+ {id:"q7",type:"mc",text:"Welches Getränk verdient den Titel »Official Fuel of Prompt Engineering«?",
+  opts:["Kaffee","Mate","Espresso doppio","(D)ein anderes Elixier"]},
+];
+
+/* ---------- Formular dynamisch bauen ---------- */
+const form=document.getElementById("survey");
+QUESTIONS.forEach(q=>{
+  const fs=document.createElement("fieldset");
+  fs.innerHTML=`<legend>${q.text}</legend>`;
+  if(q.type==="mc"){
+    q.opts.forEach((o,i)=>{
+      const id=`${q.id}_${i}`;
+      fs.insertAdjacentHTML("beforeend",
+        `<label><input type="checkbox" name="${q.id}" value="${o}"> ${o}</label><br>`);
+    });
+  }else{ // Freitext – 4 Felder
+    for(let i=0;i<4;i++){
+      fs.insertAdjacentHTML("beforeend",
+        `<input type="text" name="${q.id}" placeholder="Antwort ${i+1}" style="width:100%;margin:4px 0"><br>`);
+    }
+  }
+  form.appendChild(fs);
+});
+form.insertAdjacentHTML("beforeend",
+  `<button type="submit">Abschicken</button>`);
+
+/* ---------- Speichern ---------- */
+form.addEventListener("submit",e=>{
+  e.preventDefault();
+  const data={timestamp:Date.now()};
+  // Multiple Choice → Array; Freitext → einzelne Strings
+  QUESTIONS.forEach(q=>{
+    const values=[...form.elements[q.id]].filter(el=>el.value && (el.checked||el.type==="text"))
+                  .map(el=>el.value.trim()).filter(Boolean);
+    data[q.id]=values;
+  });
+  db.ref("responses").push(data).then(()=>{
+    form.innerHTML="<h2>Danke für die Teilnahme! 🎉</h2>";
+  });
+});
+</script>
+</body>
+</html>
