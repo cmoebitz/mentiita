@@ -4,103 +4,120 @@
 <meta charset="utf-8">
 <title>Menti ITA – Admin</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Firebase -->
 <script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-database-compat.js"></script>
 <script src="config.js"></script>
+<!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<!-- d3 + d3-cloud -->
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3-cloud@1/build/d3.layout.cloud.js"></script>
+
 <style>
  body{font-family:system-ui,Roboto,sans-serif;margin:16px}
- canvas{max-width:650px}
- #cloud svg{width:650px;height:400px}
+ h2{margin-top:32px;border-bottom:1px solid #ddd;padding-bottom:4px}
+ .panel{margin:24px 0}
+ canvas{max-width:650px;width:100%}
+ .cloud svg{width:100%;max-width:650px;height:400px}
 </style>
 </head>
 <body>
 <h1>Menti ITA – Live-Ergebnisse</h1>
 
-<h2>Balkendiagramm (MC-Fragen)</h2>
-<canvas id="mcChart"></canvas>
-
-<h2>Wortwolke (Freitext)</h2>
-<div id="cloud"></div>
+<!-- Hier fügt JavaScript dynamisch die Panels ein -->
 
 <script>
-/* ----- Metadaten ----- */
-const MC_IDS = ["q1","q2","q4","q7"];
-const FT_IDS = ["q3","q5","q6"];
-const NICE = {q1:"Vorher",q2:"Zukünftig",q4:"Hilfreich",q7:"Fuel"};
+/* ===== Metadaten der Fragen ========================================= */
+const QUESTIONS = [
+  {id:"q1", type:"mc", text:"Wie oft hast du LLMs vor diesem Workshop genutzt?"},
+  {id:"q2", type:"mc", text:"Wie häufig künftig in deiner Arbeit?"},
+  {id:"q3", type:"ft", text:"Für welche Tätigkeiten möchtest du LLMs einsetzen?"},
+  {id:"q4", type:"mc", text:"Wie hilfreich war der Workshop?"},
+  {id:"q5", type:"ft", text:"Welche Themen wünschst du dir im nächsten Workshop?"},
+  {id:"q6", type:"ft", text:"Drei Wörter, die deinen Eindruck des Workshops beschreiben:"},
+  {id:"q7", type:"mc", text:"Welches Getränk verdient den Titel »Official Fuel of Prompt Engineering«?"}
+];
 
-/* ----- Chart init ----- */
-const mcCtx = document.getElementById('mcChart');
-const mcChart = new Chart(mcCtx, {
-  type:'bar',
-  data:{labels:[],datasets:[]},
-  options:{responsive:true,plugins:{legend:{position:'top'}}}
+/* ===== DOM dynamisch aufbauen ======================================= */
+const body = document.body;
+QUESTIONS.forEach(q=>{
+  const section = document.createElement('section');
+  section.className = 'panel';
+  section.id = `panel_${q.id}`;
+  section.innerHTML =
+    `<h2>${q.text}</h2>` +
+    (q.type === 'mc'
+       ? `<canvas id="chart_${q.id}"></canvas>`
+       : `<div id="cloud_${q.id}" class="cloud"></div>`);
+  body.appendChild(section);
 });
 
-/* ----- Wortwolke helper ----- */
-function drawCloud(wordArray){
-  d3.select("#cloud").selectAll("*").remove();
-  const svg = d3.select("#cloud").append("svg")
-                .attr("viewBox","0 0 650 400");
-  d3.layout.cloud().size([650,400])
-    .words(wordArray)
+/* ===== Maps für Charts und Clouds =================================== */
+const charts = {};   // id → Chart-Instanz
+function createChart(id, labels){               // einmalig pro Frage
+  const ctx = document.getElementById(`chart_${id}`);
+  charts[id] = new Chart(ctx,{
+    type:'bar',
+    data:{labels,datasets:[{data:[],backgroundColor:Chart.defaults.backgroundColor}]},
+    options:{responsive:true,plugins:{legend:{display:false}}}
+  });
+}
+function updateChart(id, counts){
+  const chart = charts[id];
+  const labels = chart.data.labels;
+  chart.data.datasets[0].data = labels.map(l=>counts[l]||0);
+  chart.update();
+}
+
+/* Wortwolke zeichnen  ------------------------------------------------ */
+function drawCloud(id, wordsObj){
+  const div = d3.select(`#cloud_${id}`).html('');        // reset
+  const data = Object.entries(wordsObj).map(([text,size])=>({text,size}));
+  const w = 650, h = 400;
+  const svg = div.append('svg').attr('viewBox',`0 0 ${w} ${h}`);
+  d3.layout.cloud().size([w,h])
+    .words(data)
     .padding(4)
     .rotate(()=>~~(Math.random()*2)*90)
     .fontSize(d=>10+6*d.size)
-    .on("end",words=>{
-      svg.append("g")
-         .attr("transform","translate(325,200)")
-         .selectAll("text")
-         .data(words)
-         .enter().append("text")
-           .style("font-size",d=>d.size+"px")
-           .style("font-family","Impact")
-           .attr("text-anchor","middle")
-           .attr("transform",d=>`translate(${d.x},${d.y})rotate(${d.rotate})`)
-           .text(d=>d.text);
-    }).start();
+    .on('end',words=>{
+      svg.append('g')
+        .attr('transform',`translate(${w/2},${h/2})`)
+        .selectAll('text')
+        .data(words)
+        .enter().append('text')
+          .style('font-size',d=>d.size+'px')
+          .style('font-family','Impact')
+          .attr('text-anchor','middle')
+          .attr('transform',d=>`translate(${d.x},${d.y})rotate(${d.rotate})`)
+          .text(d=>d.text);
+    })
+    .start();
 }
 
-/* ----- Listener ----- */
+/* ===== Listener auf Firebase ======================================== */
 firebase.database().ref('responses').on('value', snap=>{
   const raw = Object.values(snap.val()||{});
-  console.log("RAW", raw);              // << Debug-Ausgabe
 
-  /* === Balken === */
-  const allLabels = new Set();
-  const datasets = MC_IDS.map(id=>{
-    const counts={};
-    raw.forEach(r => [].concat(r[id]||[]).forEach(a=>{
-      counts[a] = (counts[a]||0)+1;
-      allLabels.add(a);
-    }));
-    return {label:NICE[id],data:[],backgroundColor:Chart.defaults.backgroundColor};
+  QUESTIONS.forEach(q=>{
+    if(q.type === 'mc'){
+      // Alle Antwortmöglichkeiten sammeln
+      const labels = [...new Set(raw.flatMap(r=>[].concat(r[q.id]||[])))];
+      if(!charts[q.id]) createChart(q.id, labels);
+      const counts={};
+      raw.forEach(r=>[].concat(r[q.id]||[]).forEach(a=>counts[a]=(counts[a]||0)+1));
+      updateChart(q.id, counts);
+
+    } else { // Freitext
+      const words={};
+      raw.forEach(r=>[].concat(r[q.id]||[]).forEach(w=>{
+        w=w.trim().toLowerCase();
+        if(w) words[w]=(words[w]||0)+1;
+      }));
+      drawCloud(q.id, words);
+    }
   });
-
-  const labelArr = Array.from(allLabels);
-  datasets.forEach(ds=>{
-    const id = MC_IDS[datasets.indexOf(ds)];
-    const counts={};
-    raw.forEach(r => [].concat(r[id]||[]).forEach(a=>counts[a]=(counts[a]||0)+1));
-    ds.data = labelArr.map(l=>counts[l]||0);
-  });
-
-  mcChart.data.labels = labelArr;
-  mcChart.data.datasets = datasets;
-  mcChart.update();
-
-  /* === Wortwolke === */
-  const wordsCount = {};
-  FT_IDS.forEach(id=>{
-    raw.forEach(r => [].concat(r[id]||[]).forEach(w=>{
-      w = w.trim().toLowerCase();
-      if(w) wordsCount[w] = (wordsCount[w]||0)+1;
-    }));
-  });
-  const wordArr = Object.entries(wordsCount).map(([text,size])=>({text,size}));
-  drawCloud(wordArr);
 });
 </script>
 </body>
