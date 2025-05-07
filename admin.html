@@ -1,130 +1,106 @@
 <!doctype html>
 <html lang="de">
 <head>
-  <meta charset="utf-8">
-  <title>Menti ITA – Admin</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- Firebase -->
-  <script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-database-compat.js"></script>
-  <script src="config.js"></script>
-  <!-- Chart.js für Balken -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <!-- d3 & d3-cloud für Wortwolke -->
-  <script src="https://d3js.org/d3.v7.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/d3-cloud@1/build/d3.layout.cloud.js"></script>
-  <!-- QRCode.js (reicht für Workshop) -->
- <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
-
-  <style>
-    body{font-family:system-ui,Roboto,sans-serif;margin:16px}
-    h1{font-size:1.4rem;text-align:center;margin-bottom:4px}
-    canvas{max-width:600px}
-    #cloud svg{width:100%;height:400px}
-    .panel{border:1px solid #ddd;border-radius:8px;padding:12px;margin-bottom:20px}
-  </style>
+<meta charset="utf-8">
+<title>Menti ITA – Admin</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-database-compat.js"></script>
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-cloud@1/build/d3.layout.cloud.js"></script>
+<style>
+ body{font-family:system-ui,Roboto,sans-serif;margin:16px}
+ canvas{max-width:650px}
+ #cloud svg{width:650px;height:400px}
+</style>
 </head>
 <body>
-<h1>Menti ITA – Admin</h1>
+<h1>Menti ITA – Live-Ergebnisse</h1>
 
-<div class="panel" id="qrpanel">
-  <strong>Teilnahme-QR Code</strong><br>
-  <div id="qrcode"></div>
-  <small id="link"></small>
-</div>
+<h2>Balkendiagramm (MC-Fragen)</h2>
+<canvas id="mcChart"></canvas>
 
-<div class="panel">
-  <h2>Balkendiagramme (Multiple Choice)</h2>
-  <canvas id="mcChart"></canvas>
-</div>
-
-<div class="panel">
-  <h2>Wortwolke (Freitext)</h2>
-  <div id="cloud"></div>
-</div>
+<h2>Wortwolke (Freitext)</h2>
+<div id="cloud"></div>
 
 <script>
-/* ---------- QR-Code erzeugen ---------- */
-const PARTICIPANT_URL=location.href.replace("admin.html","participant.html");
-QRCode.toCanvas(document.getElementById("qrcode"), PARTICIPANT_URL, {width:160});
-document.getElementById("link").textContent=PARTICIPANT_URL;
+/* ----- Metadaten ----- */
+const MC_IDS = ["q1","q2","q4","q7"];
+const FT_IDS = ["q3","q5","q6"];
+const NICE = {q1:"Vorher",q2:"Zukünftig",q4:"Hilfreich",q7:"Fuel"};
 
-/* ---------- Chart initialisieren ---------- */
-const ctx=document.getElementById("mcChart");
-const chart=new Chart(ctx,{
-  type:"bar",
+/* ----- Chart init ----- */
+const mcCtx = document.getElementById('mcChart');
+const mcChart = new Chart(mcCtx, {
+  type:'bar',
   data:{labels:[],datasets:[]},
-  options:{responsive:true,plugins:{legend:{display:false}}}
+  options:{responsive:true,plugins:{legend:{position:'top'}}}
 });
 
-/* ---------- Wortwolke ---------- */
-const cloudDiv=d3.select("#cloud");
-
-/* ---------- Fragen-Metadaten ---------- */
-const MC_IDS=["q1","q2","q4","q7"];
-const FT_IDS=["q3","q5","q6"];
-const LABELS={
-  q1:"Vorher",
-  q2:"Zukünftig",
-  q4:"Hilfreich",
-  q7:"Fuel"
-};
-/* ---------- Farben automatisch durch Chart.js gewählt ---------- */
-
-function updateCharts(responses){
-  // Balken
-  const datasets=[];
-  MC_IDS.forEach(id=>{
-    const counts={};
-    responses.forEach(r=>(r[id]||[]).forEach(a=>counts[a]=(counts[a]||0)+1));
-    datasets.push({
-      label:LABELS[id],
-      data:Object.values(counts),
-      backgroundColor:Chart.defaults.backgroundColor,
-    });
-    chart.data.labels=[...new Set([...chart.data.labels,...Object.keys(counts)])];
-  });
-  chart.data.datasets=datasets;
-  chart.update();
-
-  // Wortwolke
-  const words={};
-  FT_IDS.forEach(id=>{
-    responses.forEach(r=>(r[id]||[]).forEach(w=>{
-      w=w.toLowerCase();
-      words[w]=(words[w]||0)+1;
-    }));
-  });
-  const wordArray=Object.entries(words).map(([text,size])=>({text,size}));
-  drawCloud(wordArray);
-}
-
+/* ----- Wortwolke helper ----- */
 function drawCloud(wordArray){
-  cloudDiv.selectAll("*").remove();
-  const svg=cloudDiv.append("svg").attr("viewBox","0 0 600 400");
-  d3.layout.cloud().size([600,400])
+  d3.select("#cloud").selectAll("*").remove();
+  const svg = d3.select("#cloud").append("svg")
+                .attr("viewBox","0 0 650 400");
+  d3.layout.cloud().size([650,400])
     .words(wordArray)
-    .padding(3)
+    .padding(4)
     .rotate(()=>~~(Math.random()*2)*90)
     .fontSize(d=>10+6*d.size)
     .on("end",words=>{
       svg.append("g")
-        .attr("transform","translate(300,200)")
-        .selectAll("text")
-        .data(words)
-        .enter().append("text")
-        .style("font-size",d=>d.size+"px")
-        .style("font-family","Impact")
-        .attr("text-anchor","middle")
-        .attr("transform",d=>`translate(${d.x},${d.y})rotate(${d.rotate})`)
-        .text(d=>d.text);
+         .attr("transform","translate(325,200)")
+         .selectAll("text")
+         .data(words)
+         .enter().append("text")
+           .style("font-size",d=>d.size+"px")
+           .style("font-family","Impact")
+           .attr("text-anchor","middle")
+           .attr("transform",d=>`translate(${d.x},${d.y})rotate(${d.rotate})`)
+           .text(d=>d.text);
     }).start();
 }
 
-/* ---------- Live-Listener ---------- */
-db.ref("responses").on("value",snap=>{
-  const data=Object.values(snap.val()||{});
-  updateCharts(data);
+/* ----- Listener ----- */
+firebase.database().ref('responses').on('value', snap=>{
+  const raw = Object.values(snap.val()||{});
+  console.log("RAW", raw);              // << Debug-Ausgabe
+
+  /* === Balken === */
+  const allLabels = new Set();
+  const datasets = MC_IDS.map(id=>{
+    const counts={};
+    raw.forEach(r => [].concat(r[id]||[]).forEach(a=>{
+      counts[a] = (counts[a]||0)+1;
+      allLabels.add(a);
+    }));
+    return {label:NICE[id],data:[],backgroundColor:Chart.defaults.backgroundColor};
+  });
+
+  const labelArr = Array.from(allLabels);
+  datasets.forEach(ds=>{
+    const id = MC_IDS[datasets.indexOf(ds)];
+    const counts={};
+    raw.forEach(r => [].concat(r[id]||[]).forEach(a=>counts[a]=(counts[a]||0)+1));
+    ds.data = labelArr.map(l=>counts[l]||0);
+  });
+
+  mcChart.data.labels = labelArr;
+  mcChart.data.datasets = datasets;
+  mcChart.update();
+
+  /* === Wortwolke === */
+  const wordsCount = {};
+  FT_IDS.forEach(id=>{
+    raw.forEach(r => [].concat(r[id]||[]).forEach(w=>{
+      w = w.trim().toLowerCase();
+      if(w) wordsCount[w] = (wordsCount[w]||0)+1;
+    }));
+  });
+  const wordArr = Object.entries(wordsCount).map(([text,size])=>({text,size}));
+  drawCloud(wordArr);
 });
 </script>
 </body>
